@@ -7,7 +7,8 @@ import { inject, injectable } from "inversify";
 
 import { TYPES } from "@root/src/di/types";
 import { DeviceController } from "@root/src/domain/adapters/DeviceController";
-import { type SpeculosConfig } from "@root/src/domain/models/config/SpeculosConfig";
+import { type SpeculinhoConfig } from "@root/src/domain/models/config/SpeculinhoConfig";
+import { getEmulatorBaseUrl } from "@root/src/domain/utils/getEmulatorBaseUrl";
 
 /**
  * Speculos Nano Device Controller
@@ -18,20 +19,21 @@ import { type SpeculosConfig } from "@root/src/domain/models/config/SpeculosConf
 @injectable()
 export class SpeculosNanoController implements DeviceController {
   private readonly logger: LoggerPublisherService;
-  private readonly buttons: ReturnType<DeviceControllerClient["buttonFactory"]>;
+  private readonly config: SpeculinhoConfig;
+
+  private get buttons(): ReturnType<DeviceControllerClient["buttonFactory"]> {
+    return deviceControllerClientFactory(
+      getEmulatorBaseUrl(this.config),
+    ).buttonFactory();
+  }
 
   constructor(
-    @inject(TYPES.SpeculosConfig) config: SpeculosConfig,
+    @inject(TYPES.SpeculinhoConfig) config: SpeculinhoConfig,
     @inject(TYPES.LoggerPublisherServiceFactory)
     loggerFactory: (tag: string) => LoggerPublisherService,
   ) {
-    const speculosUrl = `${config.url}:${config.port}`;
+    this.config = config;
     this.logger = loggerFactory("nano-controller");
-
-    // Initialize the device controller client
-    const client = deviceControllerClientFactory(speculosUrl);
-    this.buttons = client.buttonFactory();
-
     this.logger.info("Initialized nano button controller");
   }
 
