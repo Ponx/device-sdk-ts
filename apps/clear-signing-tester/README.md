@@ -32,8 +32,10 @@ Usage: pnpm cs-tester cli [options] [command]
 
 Options:
   --device <device>                Device type (stax, nanox, nanos, nanos+, flex, apex, default: stax)
-  --app-eth-version <version>      Ethereum app version (e.g. 1.19.1). If omitted, Speculinho resolves the latest.
-  --os-version <version>           Device OS version (e.g. 1.4.0). If omitted, Speculinho resolves the latest.
+  --app-eth-version <version>      Ethereum app version (e.g. 1.19.1). Must match a version available in Speculinho.
+  --os-version <version>           Device OS version (e.g. 1.4.0). Must match a version available in Speculinho.
+                                   The app/OS combination must exist — query available versions with:
+                                   curl https://speculinho.ledgerlabs.net/apps | jq '.[] | select(.device == "stax" and .coin_app == "Ethereum")'
   --speculinho-url <url>           Speculinho operator URL (overrides SPECULINHO_URL env var)
   --derivation-path <path>         Derivation path (default: "44'/60'/0'/0/0")
   --erc7730-files <files...>       ERC7730 JSON files to inject for clear signing testing
@@ -55,14 +57,12 @@ Commands:
 ### Examples
 
 ```bash
-# Basic usage (Speculinho default)
-pnpm cs-tester cli --device stax raw-file ressources/raw-erc20.json
-
-# Pin specific app/OS versions
+# App and OS versions must be a valid combination available in Speculinho.
+# Query what's available: curl https://speculinho.ledgerlabs.net/apps | jq '.'
 pnpm cs-tester cli \
   --device stax \
-  --app-eth-version 1.19.1 \
-  --os-version 1.4.0 \
+  --app-eth-version <eth-version> \
+  --os-version <os-version> \
   raw-file ressources/raw-erc20.json
 
 # Override the Speculinho operator URL
@@ -97,8 +97,8 @@ Usage: pnpm cs-tester sol [options] [command]
 
 Options:
   --device <device>                Device type (stax, nanox, nanos, nanos+, flex, apex, default: stax)
-  --app-sol-version <version>      Solana app version. If omitted, Speculinho resolves the latest.
-  --os-version <version>           Device OS version. If omitted, Speculinho resolves the latest.
+  --app-sol-version <version>      Solana app version. Must match a version available in Speculinho.
+  --os-version <version>           Device OS version. Must match a version available in Speculinho.
   --speculinho-url <url>           Speculinho operator URL (overrides SPECULINHO_URL env var)
   --derivation-path <path>         Derivation path (default: "44'/501'/0'")
   --screenshot-folder-path <path>  Save screenshots during transaction signing
@@ -109,6 +109,21 @@ Options:
   --log-file <path>                Log output to a file
   --file-log-level <level>         File log level (requires --log-file)
 ```
+
+## Finding valid app/OS versions
+
+Speculinho only has specific app/OS combinations available. Passing an unknown combination will fail with a `FileNotFoundError` from the pod. Query the available versions first:
+
+```bash
+# All available entries
+curl https://speculinho.ledgerlabs.net/apps | jq '.'
+
+# Filter by device and coin app
+curl https://speculinho.ledgerlabs.net/apps | jq '.[] | select(.device == "stax" and .coin_app == "Ethereum")'
+curl https://speculinho.ledgerlabs.net/apps | jq '.[] | select(.device == "flex" and .coin_app == "Solana")'
+```
+
+Then pass matching values to `--app-eth-version`/`--app-sol-version` and `--os-version`.
 
 ## ERC7730 Clear Signing Support
 

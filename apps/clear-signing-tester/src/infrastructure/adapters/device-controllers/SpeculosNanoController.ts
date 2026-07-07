@@ -20,11 +20,19 @@ import { getEmulatorBaseUrl } from "@root/src/domain/utils/getEmulatorBaseUrl";
 export class SpeculosNanoController implements DeviceController {
   private readonly logger: LoggerPublisherService;
   private readonly config: SpeculinhoConfig;
+  private _buttons: ReturnType<DeviceControllerClient["buttonFactory"]> | null =
+    null;
 
   private get buttons(): ReturnType<DeviceControllerClient["buttonFactory"]> {
-    return deviceControllerClientFactory(
-      getEmulatorBaseUrl(this.config),
-    ).buttonFactory();
+    if (!this._buttons) {
+      this._buttons = deviceControllerClientFactory(
+        getEmulatorBaseUrl(this.config),
+        {
+          timeoutMs: this.config.speculosHttpTimeoutMs ?? 0,
+        },
+      ).buttonFactory();
+    }
+    return this._buttons;
   }
 
   constructor(

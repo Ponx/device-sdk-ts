@@ -11,6 +11,10 @@ on:
 
 env:
   FORCE_COLOR: "1"
+  ETH_APP_VERSION: ${{ vars.ETH_APP_VERSION || '1.19.1' }}
+  OS_VERSION_STAX: ${{ vars.OS_VERSION_STAX || '1.4.0' }}
+  OS_VERSION_FLEX: ${{ vars.OS_VERSION_FLEX || '1.1.0' }}
+  OS_VERSION_NANOX: ${{ vars.OS_VERSION_NANOX || '2.4.0' }}
 
 permissions:
   contents: read
@@ -67,13 +71,12 @@ jobs:
           test: test:erc7730
           dapp: ${{ matrix.dapp }}
           device: ${{ matrix.device }}
-          coin-app: Ethereum
+          app-version: ${{ env.ETH_APP_VERSION }}
+          os-version: ${{ matrix.device == 'stax' && env.OS_VERSION_STAX || matrix.device == 'flex' && env.OS_VERSION_FLEX || env.OS_VERSION_NANOX }}
           log-level: error
           enable-file-logging: "true"
           artifact-prefix: erc7730-calldata-logs
           summary-prefix: "ERC7730 Calldata Test"
-          gh-bot-app-id: ${{ secrets.GH_BOT_APP_ID }}
-          gh-bot-private-key: ${{ secrets.GH_BOT_PRIVATE_KEY }}
           gating-token: ${{ secrets.GATING_TOKEN }}
           solana-rpc-url: ${{ secrets.SOLANA_LEDGER_RPC_URL }}
 
@@ -107,13 +110,12 @@ jobs:
           test: test:erc7730:typed-data
           dapp: ${{ matrix.dapp }}
           device: ${{ matrix.device }}
-          coin-app: Ethereum
+          app-version: ${{ env.ETH_APP_VERSION }}
+          os-version: ${{ matrix.device == 'stax' && env.OS_VERSION_STAX || matrix.device == 'flex' && env.OS_VERSION_FLEX || env.OS_VERSION_NANOX }}
           log-level: error
           enable-file-logging: "true"
           artifact-prefix: erc7730-ethereum-logs
           summary-prefix: "ERC7730 Ethereum Test"
-          gh-bot-app-id: ${{ secrets.GH_BOT_APP_ID }}
-          gh-bot-private-key: ${{ secrets.GH_BOT_PRIVATE_KEY }}
           gating-token: ${{ secrets.GATING_TOKEN }}
           solana-rpc-url: ${{ secrets.SOLANA_LEDGER_RPC_URL }}
 
@@ -134,13 +136,12 @@ jobs:
           runner: cs-tester
           test: test:gating
           device: ${{ matrix.device }}
-          coin-app: Ethereum
+          app-version: ${{ env.ETH_APP_VERSION }}
+          os-version: ${{ matrix.device == 'stax' && env.OS_VERSION_STAX || env.OS_VERSION_FLEX }}
           log-level: error
           enable-file-logging: "true"
           artifact-prefix: ethereum-gating-logs
           summary-prefix: "Ethereum Gating Test"
-          gh-bot-app-id: ${{ secrets.GH_BOT_APP_ID }}
-          gh-bot-private-key: ${{ secrets.GH_BOT_PRIVATE_KEY }}
           gating-token: ${{ secrets.GATING_TOKEN }}
           solana-rpc-url: ${{ secrets.SOLANA_LEDGER_RPC_URL }}
 

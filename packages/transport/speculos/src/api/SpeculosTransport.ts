@@ -8,6 +8,7 @@ import {
   type DisconnectHandler,
   type DmkConfig,
   type DmkError,
+  DmkNetworkClientError,
   formatApduReceivedLog,
   formatApduSentLog,
   GeneralDmkError,
@@ -161,7 +162,12 @@ export class SpeculosTransport implements Transport {
       this.logger.debug(formatApduReceivedLog(apduResponse));
       return Right(apduResponse);
     } catch (error) {
-      if (this.connectedDevice) {
+      // Only tear down the session for genuine connectivity failures.
+      // Protocol/parse errors (e.g. Speculos returning {"error":"..."}) should
+      // NOT disconnect the device — the session is still alive and subsequent
+      // APDUs can succeed.
+      const isConnectivityError = error instanceof DmkNetworkClientError;
+      if (isConnectivityError && this.connectedDevice) {
         this.logger.debug("disconnecting");
         onDisconnect(deviceId);
         this.disconnect({
@@ -171,6 +177,12 @@ export class SpeculosTransport implements Transport {
         if (this.disconnectInterval) {
           clearInterval(this.disconnectInterval);
         }
+      } else {
+        this.logger.warn("APDU error (session kept alive)", {
+          data: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
       }
       return Left(new GeneralDmkError(error));
     }
@@ -201,6 +213,7 @@ export class SpeculosTransport implements Transport {
     deviceId: DeviceId,
   ): void {
     this.disconnectInterval = setInterval(async () => {
+      // poll every 10s — remote pods have higher latency
       const isServerAvailable =
         await this._speculosDataSource.isServerAvailable();
 
@@ -220,7 +233,7 @@ export class SpeculosTransport implements Transport {
           clearInterval(this.disconnectInterval);
         }
       }
-    }, 2000);
+    }, 10_000); // 10s — gives remote Speculinho pods enough time to respond
   }
 }
 

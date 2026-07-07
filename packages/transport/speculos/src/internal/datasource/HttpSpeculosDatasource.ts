@@ -4,7 +4,7 @@ import PACKAGE from "@root/package.json";
 
 import { type SpeculosDatasource } from "./SpeculosDatasource";
 
-const TIMEOUT = 2000; // 2 second timeout for availability check
+const TIMEOUT = 10_000; // 10 second timeout — generous enough for remote Speculinho pods
 
 const removeTrailingSlashes = (url: string) => url.replace(/\/+$/, "");
 
@@ -29,7 +29,11 @@ export class HttpSpeculosDatasource implements SpeculosDatasource {
   async postApdu(apdu: string): Promise<string> {
     const data = (await this.http.post(`${this.baseUrl}/apdu`, {
       data: apdu,
-    })) as SpeculosApduDTO;
+    })) as SpeculosApduDTO & { error?: string };
+    if (!data?.data) {
+      const detail = data?.error ?? JSON.stringify(data) ?? "empty body";
+      throw new Error(`Speculos /apdu returned no data field: ${detail}`);
+    }
     return data.data;
   }
 

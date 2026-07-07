@@ -36,6 +36,8 @@ export type SolanaCliConfig = {
   screenshotFolderPath?: string;
   /** Speculinho operator URL. When set, skips local Docker entirely. */
   speculinhoUrl?: string;
+  /** HTTP timeout in ms for Speculos pod requests (0 = no timeout, the default). */
+  speculosHttpTimeoutMs?: number;
 
   // config.logger
   logLevel: CliLogLevel;
@@ -76,6 +78,7 @@ export class SolanaTransactionTesterCli {
         appVersion: config.appSolVersion,
         screenshotPath: config.screenshotFolderPath,
         speculinhoUrl: config.speculinhoUrl,
+        speculosHttpTimeoutMs: config.speculosHttpTimeoutMs,
       },
       signer: {
         originToken: process.env["GATING_TOKEN"] || "test-origin-token",
@@ -213,6 +216,11 @@ export class SolanaTransactionTesterCli {
       .option(
         "--speculinho-url <url>",
         "Speculinho operator URL (default: https://speculinho.ledgerlabs.net, overrides SPECULINHO_URL env var).",
+      )
+      .option(
+        "--speculos-http-timeout <ms>",
+        "HTTP timeout in ms for Speculos pod requests (0 = no timeout, default). Raise this on slow connections.",
+        (value: string) => parseInt(value, 10),
       )
       .option(
         "--log-level <level>",

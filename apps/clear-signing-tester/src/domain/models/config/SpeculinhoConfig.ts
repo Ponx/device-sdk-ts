@@ -23,4 +23,11 @@ export type SpeculinhoConfig = {
    * than reading this field directly.
    */
   resolvedUrl?: string;
+  /**
+   * HTTP timeout in milliseconds for requests sent to the Speculos pod
+   * (button presses, touchscreen taps, screen reads).
+   * Defaults to 0 (no timeout) — mirrors how APDU calls behave.
+   * Set to e.g. 30_000 if you want a safety net on slow connections.
+   */
+  speculosHttpTimeoutMs?: number;
 };

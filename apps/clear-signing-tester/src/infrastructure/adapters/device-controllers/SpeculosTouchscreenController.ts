@@ -25,11 +25,18 @@ export class SpeculosTouchscreenController implements DeviceController {
   private readonly logger: LoggerPublisherService;
   private readonly config: SpeculinhoConfig;
   private readonly delayMs: number;
+  private _tap: ReturnType<DeviceControllerClient["tapFactory"]> | null = null;
 
   private get tap(): ReturnType<DeviceControllerClient["tapFactory"]> {
-    return deviceControllerClientFactory(
-      getEmulatorBaseUrl(this.config),
-    ).tapFactory(this.config.device);
+    if (!this._tap) {
+      this._tap = deviceControllerClientFactory(
+        getEmulatorBaseUrl(this.config),
+        {
+          timeoutMs: this.config.speculosHttpTimeoutMs ?? 0,
+        },
+      ).tapFactory(this.config.device);
+    }
+    return this._tap;
   }
 
   constructor(

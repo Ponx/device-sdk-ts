@@ -24,9 +24,9 @@ import { TYPES } from "@root/src/di/types";
 import { type CalConfig } from "@root/src/domain/models/config/CalConfig";
 import { type SignerConfig } from "@root/src/domain/models/config/SignerConfig";
 import { type SpeculinhoConfig } from "@root/src/domain/models/config/SpeculinhoConfig";
-import { getEmulatorBaseUrl } from "@root/src/domain/utils/getEmulatorBaseUrl";
 import { type RetryService } from "@root/src/domain/services/RetryService";
 import { type ServiceController } from "@root/src/domain/services/ServiceController";
+import { getEmulatorBaseUrl } from "@root/src/domain/utils/getEmulatorBaseUrl";
 import { DefaultSigningService } from "@root/src/infrastructure/services/DefaultSigningService";
 
 export class DMKServiceController implements ServiceController {
@@ -138,6 +138,57 @@ export class DMKServiceController implements ServiceController {
     );
 
     this.logger.info("DMK started successfully");
+  }
+
+  /**
+   * Reconnect to the Speculos device after a genuine connectivity drop.
+   * Re-uses the existing DMK and context module — only the device session
+   * is re-established and the signer rebuilt with the new session ID.
+   */
+  async reconnect(): Promise<void> {
+    this.logger.info("Reconnecting to Speculos device...");
+
+    if (!this.dmk || !this.contextModule) {
+      this.logger.warn("DMK not initialized, running full start instead");
+      await this.start();
+      return;
+    }
+
+    await this.retryService.retryUntilSuccess(
+      async () => {
+        return new Promise<void>((resolve, reject) => {
+          this.dmk!.startDiscovering({
+            transport: speculosIdentifier,
+          }).subscribe({
+            next: (device: DiscoveredDevice) => {
+              this.dmk!.connect({
+                device: device,
+                sessionRefresherOptions: { isRefresherDisabled: true },
+              })
+                .then((sessionId: string) => {
+                  this.sessionId = sessionId;
+                  this.signer = new SignerEthBuilder({
+                    dmk: this.dmk!,
+                    sessionId,
+                    originToken: this.signerConfig.originToken,
+                  })
+                    .withContextModule(this.contextModule!)
+                    .build();
+                  this.signingService.setSigner(this.signer);
+                  this.logger.info("Reconnected successfully", {
+                    data: { sessionId },
+                  });
+                  resolve();
+                })
+                .catch(reject);
+            },
+            error: reject,
+          });
+        });
+      },
+      5,
+      5000,
+    );
   }
 
   async stop(): Promise<void> {

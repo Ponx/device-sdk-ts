@@ -9,6 +9,10 @@ import { type ServiceController } from "@root/src/domain/services/ServiceControl
 const DEFAULT_READY_TIMEOUT_MS = 120_000;
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
 
+/** Well-known Speculos test mnemonic. Overridable via SPECULOS_SEED env var. */
+const DEFAULT_SPECULOS_SEED =
+  "glory promote mansion idle axis finger extend february uncover one trip resolve toe";
+
 interface StatusResponse {
   readonly run_id: string;
   readonly status: "pending" | "ready" | "failed";
@@ -97,13 +101,16 @@ export class SpeculinhoServiceController implements ServiceController {
     appVersion: string | undefined,
     osVersion: string | undefined,
   ): Promise<void> {
+    const seed = process.env["SPECULOS_SEED"] ?? DEFAULT_SPECULOS_SEED;
+
     const body: Record<string, unknown> = {
       coin_app: appName,
+      coin_app_version: appVersion,
       device: this.config.device,
+      device_os_version: osVersion,
+      seed,
       run_id: this.runId,
     };
-    if (appVersion) body["coin_app_version"] = appVersion;
-    if (osVersion) body["device_os_version"] = osVersion;
 
     let res: Response;
     try {
