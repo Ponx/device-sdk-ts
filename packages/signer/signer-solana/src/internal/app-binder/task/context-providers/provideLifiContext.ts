@@ -47,18 +47,24 @@ export const provideLifiContext: ProvideContextHandler<
     },
   );
 
+  // Each key's array is consumed FIFO: the CAL response orders descriptors to
+  // match the template instruction sequence, so popping front gives the right
+  // descriptor for each instruction occurrence.
+  const queues: SolanaTransactionDescriptorList = Object.fromEntries(
+    Object.entries(lifiDescriptors).map(([k, v]) => [k, [...v]]),
+  );
+
   for (const [index, instruction] of message.compiledInstructions.entries()) {
     const programId = message.allKeys[instruction.programIdIndex];
     const programIdStr = programId?.toBase58();
 
-    const descriptor = findMatchingDescriptor(
+    const descriptor = popMatchingDescriptor(
       programIdStr,
       instruction.data,
       instructionsMeta,
-      lifiDescriptors,
+      queues,
       logger,
     );
-    const sigHex = descriptor?.signature;
 
     logger.debug(
       `[provideLifiContext] Instruction ${index}: ${descriptor ? "matched" : "no match"}`,
@@ -67,28 +73,30 @@ export const provideLifiContext: ProvideContextHandler<
           index,
           programId: programIdStr,
           hasDescriptor: !!descriptor,
-          hasSignature: !!sigHex,
-          signatureHex: sigHex ?? null,
+          hasSignature: !!descriptor?.signature,
         },
       },
     );
 
-    if (descriptor && sigHex) {
+    if (descriptor?.signature) {
       await api.sendCommand(
         new ProvideInstructionDescriptorCommand({
           dataHex: descriptor.data,
-          signatureHex: sigHex,
+          signatureHex: descriptor.signature,
         }),
       );
     }
   }
 };
 
-function findMatchingDescriptor(
+// Pops the next descriptor for the first matching (program_id, discriminator)
+// from the FIFO queues. Callers must pass the same mutable `queues` object
+// across iterations so that each pop advances the queue for that key.
+function popMatchingDescriptor(
   programIdStr: string | undefined,
   instructionData: Uint8Array,
   instructionsMeta: SolanaLifiInstructionMeta[],
-  descriptors: SolanaTransactionDescriptorList,
+  queues: SolanaTransactionDescriptorList,
   logger: LoggerPublisherService,
 ): SolanaTransactionDescriptor | undefined {
   if (!programIdStr) return undefined;
@@ -99,7 +107,7 @@ function findMatchingDescriptor(
 
   if (candidates.length === 0) {
     logger.debug(
-      "[findMatchingDescriptor] No instruction metadata found for program",
+      "[popMatchingDescriptor] No instruction metadata found for program",
       { data: { programId: programIdStr } },
     );
     return undefined;
@@ -107,32 +115,26 @@ function findMatchingDescriptor(
 
   for (const candidate of candidates) {
     const discriminatorHex = candidate.discriminator_hex ?? "";
+    if (!matchesDiscriminator(instructionData, discriminatorHex)) continue;
 
-    if (matchesDiscriminator(instructionData, discriminatorHex)) {
-      const key = `${programIdStr}:${discriminatorHex}`;
-      const descriptor = descriptors[key];
+    const key = `${programIdStr}:${discriminatorHex}`;
+    const queue = queues[key];
+    if (!queue?.length) continue;
 
-      logger.debug("[findMatchingDescriptor] Discriminator matched", {
-        data: {
-          programId: programIdStr,
-          discriminatorHex,
-          key,
-          found: !!descriptor,
-        },
-      });
-
-      if (descriptor) return descriptor;
-    }
+    const descriptor = queue.shift()!;
+    logger.debug("[popMatchingDescriptor] Popped descriptor from queue", {
+      data: { programId: programIdStr, key, remaining: queue.length },
+    });
+    return descriptor;
   }
 
-  logger.debug("[findMatchingDescriptor] No matching discriminator found", {
+  logger.debug("[popMatchingDescriptor] No matching discriminator found", {
     data: {
       programId: programIdStr,
       instructionDataLength: instructionData.length,
       candidateDiscriminators: candidates.map((c) => c.discriminator_hex ?? ""),
     },
   });
-
   return undefined;
 }
 

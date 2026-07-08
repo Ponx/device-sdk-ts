@@ -181,12 +181,13 @@ export class LifiContextLoader
 
     for (const item of descriptors) {
       const key = `${item.program_id}:${item.discriminator_hex ?? ""}`;
-      output[key] = {
+      const descriptor = {
         data: item.descriptor.data,
         descriptorType: item.descriptor.descriptorType,
         descriptorVersion: item.descriptor.descriptorVersion,
         signature: item.descriptor.signatures[signatureKind] ?? "",
       };
+      (output[key] ??= []).push(descriptor);
       this.logger.debug("[pluckTransactionData] Mapped program descriptor", {
         data: {
           programId: item.program_id,

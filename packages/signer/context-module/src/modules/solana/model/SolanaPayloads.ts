@@ -21,7 +21,7 @@ export type SolanaLifiInstructionMeta = {
 };
 
 export type SolanaLifiPayload = {
-  descriptors: Record<string, SolanaTransactionDescriptor>;
+  descriptors: Record<string, SolanaTransactionDescriptor[]>;
   instructions: SolanaLifiInstructionMeta[];
 };
 

@@ -68,8 +68,8 @@ describe("provideLifiContext", () => {
       type: ClearSignContextType.SOLANA_LIFI as const,
       payload: {
         descriptors: {
-          "A_PID:1": { data: SIG, signature: SIG },
-          "C_PID:3": { data: SIG, signature: SIG },
+          "A_PID:1": [{ data: SIG, signature: SIG }],
+          "C_PID:3": [{ data: SIG, signature: SIG }],
         },
         instructions: [
           { program_id: "A_PID", discriminator_hex: "1" },
@@ -111,7 +111,7 @@ describe("provideLifiContext", () => {
     const result = {
       type: ClearSignContextType.SOLANA_LIFI as const,
       payload: {
-        descriptors: { "A:1": { data: SIG, signature: SIG } },
+        descriptors: { "A:1": [{ data: SIG, signature: SIG }] },
         instructions: [{ program_id: "A", discriminator_hex: "1" }],
       },
       certificate: swapCert,
@@ -149,7 +149,7 @@ describe("provideLifiContext", () => {
     const result = {
       type: ClearSignContextType.SOLANA_LIFI as const,
       payload: {
-        descriptors: { "P1:1": { data: SIG, signature: SIG } },
+        descriptors: { "P1:1": [{ data: SIG, signature: SIG }] },
         instructions: [{ program_id: "P1", discriminator_hex: "1" }],
       },
       certificate: undefined,
@@ -175,7 +175,7 @@ describe("provideLifiContext", () => {
     const result = {
       type: ClearSignContextType.SOLANA_LIFI as const,
       payload: {
-        descriptors: { "PID:": { data: SIG, signature: "" } },
+        descriptors: { "PID:": [{ data: SIG, signature: "" }] },
         instructions: [{ program_id: "PID" }],
       },
     };
@@ -212,7 +212,7 @@ describe("provideLifiContext", () => {
     const result = {
       type: ClearSignContextType.SOLANA_LIFI as const,
       payload: {
-        descriptors: { "SHORT:2aade37a": { data: SIG, signature: SIG } },
+        descriptors: { "SHORT:2aade37a": [{ data: SIG, signature: SIG }] },
         instructions: [{ program_id: "SHORT", discriminator_hex: "2aade37a" }],
       },
     };
@@ -233,7 +233,7 @@ describe("provideLifiContext", () => {
     const result = {
       type: ClearSignContextType.SOLANA_LIFI as const,
       payload: {
-        descriptors: { "MM:aabbccdd": { data: SIG, signature: SIG } },
+        descriptors: { "MM:aabbccdd": [{ data: SIG, signature: SIG }] },
         instructions: [{ program_id: "MM", discriminator_hex: "aabbccdd" }],
       },
     };
@@ -258,8 +258,8 @@ describe("provideLifiContext", () => {
       type: ClearSignContextType.SOLANA_LIFI as const,
       payload: {
         descriptors: {
-          "MULTI:aaff": { data: "data_aa", signature: SIG },
-          "MULTI:bbcc": { data: "data_bb", signature: SIG },
+          "MULTI:aaff": [{ data: "data_aa", signature: SIG }],
+          "MULTI:bbcc": [{ data: "data_bb", signature: SIG }],
         },
         instructions: [
           { program_id: "MULTI", discriminator_hex: "aaff" },
@@ -302,5 +302,95 @@ describe("provideLifiContext", () => {
     await provideLifiContext(result as any, makeDeps(buildNormaliser(message)));
 
     expect(api.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it("consumes descriptors FIFO: first instruction gets transfer descriptor, second gets fee descriptor", async () => {
+    // Models the LiFi CAL PR fix: two native SOL transfer instructions share
+    // discriminator 02. The firmware is strictly FIFO — descriptor[0] is applied
+    // to the first matching instruction, descriptor[1] to the second.
+    api.sendCommand.mockResolvedValue(success);
+
+    const message = {
+      compiledInstructions: [
+        { programIdIndex: 0, data: new Uint8Array([0x02, 0x00, 0x00, 0x00]) }, // transfer
+        { programIdIndex: 0, data: new Uint8Array([0x02, 0x00, 0x00, 0x00]) }, // fee
+      ],
+      allKeys: [makeKey("11111111111111111111111111111111")],
+    };
+
+    const result = {
+      type: ClearSignContextType.SOLANA_LIFI as const,
+      payload: {
+        descriptors: {
+          "11111111111111111111111111111111:02": [
+            { data: "transfer_data", signature: "transfer_sig" },
+            { data: "fee_data", signature: "fee_sig" },
+          ],
+        },
+        instructions: [
+          {
+            program_id: "11111111111111111111111111111111",
+            discriminator_hex: "02",
+          },
+          {
+            program_id: "11111111111111111111111111111111",
+            discriminator_hex: "02",
+          },
+        ],
+      },
+      certificate: undefined,
+    };
+
+    await provideLifiContext(result as any, makeDeps(buildNormaliser(message)));
+
+    expect(api.sendCommand).toHaveBeenCalledTimes(2);
+    expect(api.sendCommand.mock.calls[0]![0].args.dataHex).toBe(
+      "transfer_data",
+    );
+    expect(api.sendCommand.mock.calls[1]![0].args.dataHex).toBe("fee_data");
+  });
+
+  it("sends only one descriptor per instruction even when queue has extras", async () => {
+    // A single compiled instruction with two queued descriptors should only
+    // consume the first (FIFO) — the second stays in the queue.
+    api.sendCommand.mockResolvedValue(success);
+
+    const message = {
+      compiledInstructions: [
+        { programIdIndex: 0, data: new Uint8Array([0x02, 0x00, 0x00, 0x00]) },
+      ],
+      allKeys: [makeKey("11111111111111111111111111111111")],
+    };
+
+    const result = {
+      type: ClearSignContextType.SOLANA_LIFI as const,
+      payload: {
+        descriptors: {
+          "11111111111111111111111111111111:02": [
+            { data: "transfer_data", signature: "transfer_sig" },
+            { data: "fee_data", signature: "fee_sig" },
+          ],
+        },
+        instructions: [
+          {
+            program_id: "11111111111111111111111111111111",
+            discriminator_hex: "02",
+          },
+          {
+            program_id: "11111111111111111111111111111111",
+            discriminator_hex: "02",
+          },
+        ],
+      },
+      certificate: undefined,
+    };
+
+    await provideLifiContext(result as any, makeDeps(buildNormaliser(message)));
+
+    // Only one instruction compiled → only one descriptor consumed
+    expect(api.sendCommand).toHaveBeenCalledTimes(1);
+    expect(api.sendCommand.mock.calls[0]![0].args.dataHex).toBe(
+      "transfer_data",
+    );
   });
 });

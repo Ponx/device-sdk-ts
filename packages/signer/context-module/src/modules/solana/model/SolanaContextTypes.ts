@@ -34,7 +34,7 @@ export type GetTransactionDescriptorsResponse = {
 
 export type SolanaTransactionDescriptorList = Record<
   string,
-  SolanaTransactionDescriptor
+  SolanaTransactionDescriptor[]
 >;
 
 // The signer registry (`provideContextRegistry.ts`) uses a required mapped
