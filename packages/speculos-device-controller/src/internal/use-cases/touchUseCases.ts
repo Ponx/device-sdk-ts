@@ -90,3 +90,36 @@ export const acceptBlindSigning =
   <K extends string>(touch: TouchController<K>, deviceKey: K) =>
   async () =>
     await tapQuick(touch, deviceKey)({ x: 50, y: 94 });
+
+// Confirmed via `initiate-sign` + `GET /events` against a live Stax pod: the
+// "Maybe later" button's text spans x=130-482px, y=612-644px on a 400x672
+// screen, i.e. centered around (76.5%, 93.5%). The previously-used
+// `secondaryButton()` coordinate `{x: 50, y: 90}` lands just above that
+// button, in the screen's "Quit app" swipe-gesture zone (confirmed present
+// at (49.9%, 93.1%) on the same screen) — tapping there exits the app
+// instead of answering the modal. Only Stax has a confirmed coordinate so
+// far; other devices fall back to the same value pending verification.
+const WEB3_CHECKS_OPT_OUT_COORDS = {
+  stax: { x: 77, y: 94 },
+} as const satisfies Record<string, PercentCoordinates>;
+
+type Web3ChecksOptOutTouchKey = keyof typeof WEB3_CHECKS_OPT_OUT_COORDS;
+
+const isWeb3ChecksOptOutTouchKey = (
+  key: string,
+): key is Web3ChecksOptOutTouchKey =>
+  Object.hasOwn(WEB3_CHECKS_OPT_OUT_COORDS, key);
+
+const DEFAULT_WEB3_CHECKS_OPT_OUT_COORDS: PercentCoordinates = {
+  x: 77,
+  y: 94,
+};
+
+export const rejectWeb3ChecksOptIn =
+  <K extends string>(touch: TouchController<K>, deviceKey: K) =>
+  async () => {
+    const point = isWeb3ChecksOptOutTouchKey(deviceKey)
+      ? WEB3_CHECKS_OPT_OUT_COORDS[deviceKey]
+      : DEFAULT_WEB3_CHECKS_OPT_OUT_COORDS;
+    await tapQuick(touch, deviceKey)(point);
+  };

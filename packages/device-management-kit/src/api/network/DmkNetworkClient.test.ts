@@ -271,6 +271,31 @@ describe("DmkNetworkClient", () => {
       expect(error).toBeInstanceOf(DmkNetworkClientError);
       expect((error as DmkNetworkClientError).cause).toBe(cause);
     });
+
+    it("should wrap body-read failures (e.g. socket terminated mid-stream) into DmkNetworkClientError", async () => {
+      // `fetch()` can resolve with headers before the body finishes streaming
+      // (e.g. chunked responses, or a server holding the connection open
+      // while blocked on some external event). If the connection then drops
+      // while the body is being read, the failure surfaces from
+      // `response.text()`, not from the `fetch()` call itself.
+      const cause = new TypeError("terminated");
+      const fakeResponse = {
+        ok: true,
+        status: 200,
+        statusText: "",
+        headers: new Headers({ "Content-Type": "application/json" }),
+        text: () => Promise.reject(cause),
+      } as unknown as Response;
+      const fetchMock = vi.fn().mockResolvedValue(fakeResponse);
+      const client = new DmkNetworkClient({ fetch: fetchMock });
+
+      const error = await client
+        .get("https://api.example.com/items")
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(DmkNetworkClientError);
+      expect((error as DmkNetworkClientError).cause).toBe(cause);
+    });
   });
 
   describe("timeout", () => {

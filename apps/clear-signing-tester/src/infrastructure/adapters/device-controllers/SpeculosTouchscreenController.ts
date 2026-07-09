@@ -64,7 +64,7 @@ export class SpeculosTouchscreenController implements DeviceController {
 
   async rejectTransactionCheck(): Promise<void> {
     this.logger.debug("☝️ (touch) : Rejecting tx checks optin");
-    await this.tap.secondaryButton();
+    await this.tap.rejectWeb3ChecksOptIn();
   }
 
   async acknowledgeBlindSigning(): Promise<void> {

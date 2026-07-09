@@ -206,7 +206,23 @@ export class DmkNetworkClient {
         });
       }
 
-      const data = await parseBody(response, responseType);
+      let data: unknown;
+      try {
+        data = await parseBody(response, responseType);
+      } catch (cause) {
+        // `fetch()` can resolve with headers before the body finishes
+        // streaming (e.g. chunked responses, or servers that hold the
+        // connection open while the caller is blocked on some external
+        // event). If the underlying socket is then closed/reset while the
+        // body is still being read, that failure surfaces here — not from
+        // the initial `fetch()` call above — so it must be wrapped the same
+        // way, otherwise callers can't distinguish it from a JSON parsing
+        // error and it won't be recognized as a connectivity failure.
+        if (cause instanceof DmkNetworkClientError) {
+          throw cause;
+        }
+        throw wrapFetchError({ cause, timeoutMs: config.timeoutMs });
+      }
 
       return {
         data,

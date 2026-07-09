@@ -21,6 +21,7 @@ import {
   navigateNext,
   navigatePrevious,
   reject,
+  rejectWeb3ChecksOptIn,
   secondaryButton,
   sign,
   tapLong,
@@ -43,6 +44,7 @@ export type TapFactory = (deviceKey: string) => {
   navigatePrevious: () => Promise<void>;
   mainButton: () => Promise<void>;
   secondaryButton: () => Promise<void>;
+  rejectWeb3ChecksOptIn: () => Promise<void>;
   enterMenu: () => Promise<void>;
   exitMenu: () => Promise<void>;
   enableBlindSigningSettings: () => Promise<void>;
@@ -94,6 +96,7 @@ export const deviceControllerClientFactory: DeviceControllerClientFactory = (
       navigatePrevious: navigatePrevious(touch, key),
       mainButton: mainButton(touch, key),
       secondaryButton: secondaryButton(touch, key),
+      rejectWeb3ChecksOptIn: rejectWeb3ChecksOptIn(touch, key),
       enterMenu: enterMenu(touch, key),
       exitMenu: exitMenu(touch, key),
       enableBlindSigningSettings: enableBlindSigningSettings(touch, key),

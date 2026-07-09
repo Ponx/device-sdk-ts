@@ -79,13 +79,24 @@ export class HttpGatedDescriptorDataSource
         byContract[selectorWith0x] ??
         byContract[selector];
       if (entry?.descriptor) {
-        return Right({
-          signedDescriptor: HexStringUtils.appendSignatureToPayload(
-            entry.descriptor,
-            entry.signatures![this.config.cal.mode]!,
-            SIGNATURE_TAG,
-          ),
+        console.log("[GatedSigning] getGatedDescriptor", {
+          mode: this.config.cal.mode,
+          contract: normalizedAddress,
+          selector: selectorWithout0x,
+          descriptorHex: entry.descriptor,
+          availableSignatureModes: Object.keys(entry.signatures ?? {}),
+          selectedSignature: entry.signatures?.[this.config.cal.mode],
         });
+        const signedDescriptor = HexStringUtils.appendSignatureToPayload(
+          entry.descriptor,
+          entry.signatures![this.config.cal.mode]!,
+          SIGNATURE_TAG,
+        );
+        console.log(
+          "[GatedSigning] assembled signed descriptor hex",
+          signedDescriptor,
+        );
+        return Right({ signedDescriptor });
       }
     }
 

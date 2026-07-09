@@ -35,8 +35,20 @@ export class DefaultTouchController<K extends string>
     return axis.xy(p.x, p.y);
   }
 
+  private logTouch(
+    action: SpeculosActions,
+    deviceKey: K,
+    point: PercentCoordinates,
+    abs: { x: number; y: number },
+  ): void {
+    console.log(
+      `[touch] ${String(deviceKey)} ${action} at (${point.x}%, ${point.y}%) -> pixel (${abs.x}, ${abs.y})`,
+    );
+  }
+
   async tapAndRelease(deviceKey: K, point: PercentCoordinates): Promise<void> {
     const abs = this.toAbs(deviceKey, point);
+    this.logTouch(SpeculosActions.PRESS_AND_RELEASE, deviceKey, point, abs);
     await this.client.post(`/finger`, {
       action: SpeculosActions.PRESS_AND_RELEASE,
       ...abs,
@@ -45,6 +57,7 @@ export class DefaultTouchController<K extends string>
 
   async tap(deviceKey: K, point: PercentCoordinates): Promise<void> {
     const abs = this.toAbs(deviceKey, point);
+    this.logTouch(SpeculosActions.PRESS, deviceKey, point, abs);
     await this.client.post(`/finger`, {
       action: SpeculosActions.PRESS,
       ...abs,
@@ -53,6 +66,7 @@ export class DefaultTouchController<K extends string>
 
   async release(deviceKey: K, point: PercentCoordinates): Promise<void> {
     const abs = this.toAbs(deviceKey, point);
+    this.logTouch(SpeculosActions.RELEASE, deviceKey, point, abs);
     await this.client.post(`/finger`, {
       action: SpeculosActions.RELEASE,
       ...abs,

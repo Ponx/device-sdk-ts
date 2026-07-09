@@ -48,6 +48,18 @@ export interface ScreenAnalyzerService {
   isBlindSigningBlocked(): Promise<boolean>;
 
   /**
+   * Check if the current screen is the Web3 Checks opt-in modal
+   * (e.g. "Transaction Check?" / "Maybe later" / "Yes, enable"). Used to
+   * verify the modal has actually rendered before tapping a hardcoded
+   * coordinate on it — the app can still be showing a prior screen (e.g. the
+   * app's launch/info screen) for a moment after the triggering APDU is
+   * sent, and tapping blind into that screen risks hitting an unintended
+   * element (e.g. the "Quit app" gesture zone).
+   * @returns Promise<boolean> - True if the Web3 Checks opt-in modal is shown
+   */
+  isWeb3ChecksOptInScreen(): Promise<boolean>;
+
+  /**
    * Analyze all accumulated screen texts for expected texts
    * @param expectedTexts - Array of texts to look for
    * @returns Promise<{ containsAll: boolean; found: string[]; missing: string[] }> - Result of the analysis

@@ -79,6 +79,15 @@ export class ProvideContextTask {
 
     // if a certificate is provided, we load it before sending the command
     if (certificate) {
+      this._logger.debug("[run] Loading certificate before context", {
+        data: {
+          contextType: type,
+          keyUsageNumber: certificate.keyUsageNumber,
+          certificatePayloadHex: Array.from(certificate.payload)
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join(""),
+        },
+      });
       await this._api.sendCommand(
         new LoadCertificateCommand({
           keyUsage: certificate.keyUsageNumber,

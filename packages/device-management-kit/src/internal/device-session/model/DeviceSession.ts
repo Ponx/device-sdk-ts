@@ -34,6 +34,7 @@ import {
   formatApduExchangeLog,
   formatApduSendingLog,
 } from "@api/utils/apduLogs";
+import { bufferToHexaString } from "@api/utils/HexaString";
 import { DEVICE_SESSION_REFRESHER_DEFAULT_OPTIONS } from "@internal/device-session/data/DeviceSessionRefresherConst";
 import { IntentQueueService } from "@internal/device-session/service/IntentQueueService";
 import { RefresherService } from "@internal/device-session/service/RefresherService";
@@ -333,7 +334,13 @@ export class DeviceSession {
 
     return response.caseOf({
       Left: (err) => {
-        this._logger.error("[sendCommand] error", { data: { err } });
+        this._logger.error("[sendCommand] error", {
+          data: {
+            err,
+            command: command.name,
+            apdu: bufferToHexaString(apdu.getRawApdu(), false),
+          },
+        });
         throw err;
       },
       Right: (r) => {

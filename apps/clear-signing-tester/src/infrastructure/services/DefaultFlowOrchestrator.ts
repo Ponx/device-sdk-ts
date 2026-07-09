@@ -13,10 +13,13 @@ import {
 } from "rxjs";
 
 import { TYPES } from "@root/src/di/types";
+import { type ScreenReader } from "@root/src/domain/adapters/ScreenReader";
+import { type SpeculinhoConfig } from "@root/src/domain/models/config/SpeculinhoConfig";
 import { type SignableInput } from "@root/src/domain/models/SignableInput";
 import { type FlowOrchestrator } from "@root/src/domain/services/FlowOrchestrator";
 import { type SigningServiceResult } from "@root/src/domain/services/TransactionSigningService";
 import { type TestResult } from "@root/src/domain/types/TestStatus";
+import { logScreenContents } from "@root/src/domain/utils/screenDebug";
 import { CompleteStateHandler } from "@root/src/infrastructure/state-handlers/CompleteStateHandler";
 import { ErrorStateHandler } from "@root/src/infrastructure/state-handlers/ErrorStateHandler";
 import { OptOutStateHandler } from "@root/src/infrastructure/state-handlers/OptOutStateHandler";
@@ -49,6 +52,10 @@ export class DefaultFlowOrchestrator implements FlowOrchestrator {
     private readonly signTransactionStateHandler: SignTransactionStateHandler,
     @inject(TYPES.SignableInteractions)
     private readonly signableInteractions: Set<UserInteractionRequired>,
+    @inject(TYPES.ScreenReader)
+    private readonly screenReader: ScreenReader,
+    @inject(TYPES.SpeculinhoConfig)
+    private readonly speculinhoConfig: SpeculinhoConfig,
   ) {
     this.logger = loggerFactory("signing-flow-orchestrator");
   }
@@ -95,20 +102,23 @@ export class DefaultFlowOrchestrator implements FlowOrchestrator {
           }),
         )
         .subscribe({
-          next: async (state) => {
-            this.logger.debug("Handling state", {
-              data: { state: JSON.stringify(state) },
-            });
-            const result = await this.handleState(state, input);
-
-            if (result.status !== "ongoing") {
+          // RxJS does not await async `next` callbacks, so any exception thrown
+          // here (e.g. a device controller HTTP call hitting a released pod)
+          // would otherwise become an unhandled promise rejection and crash the
+          // whole process instead of being reported as a single item failure.
+          next: (state) => {
+            this.handleNext(state, input, resolve).catch((error: unknown) => {
+              this.logger.error("Unhandled error while processing state", {
+                data: { error },
+              });
               resolve({
                 input,
-                status: result.status,
+                status: "error",
                 timestamp: new Date().toISOString(),
-                errorMessage: result.errorMessage,
+                errorMessage:
+                  error instanceof Error ? error.message : String(error),
               });
-            }
+            });
           },
           error: (error: Error) => {
             resolve({
@@ -120,6 +130,37 @@ export class DefaultFlowOrchestrator implements FlowOrchestrator {
           },
         });
     });
+  }
+
+  private async handleNext(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Device state type is complex and varies
+    state: any,
+    input: SignableInput,
+    resolve: (result: TestResult) => void,
+  ): Promise<void> {
+    this.logger.debug("Handling state", {
+      data: { state: JSON.stringify(state) },
+    });
+    console.log(
+      `[signing-flow] status=${state.status} requiredUserInteraction=${state.intermediateValue?.requiredUserInteraction ?? "-"}`,
+    );
+    try {
+      const events = await this.screenReader.readRawScreenEvents();
+      logScreenContents(events, this.speculinhoConfig.device, "signing-flow");
+    } catch (error) {
+      console.error("[signing-flow] failed to read screen:", error);
+    }
+
+    const result = await this.handleState(state, input);
+
+    if (result.status !== "ongoing") {
+      resolve({
+        input,
+        status: result.status,
+        timestamp: new Date().toISOString(),
+        errorMessage: result.errorMessage,
+      });
+    }
   }
 
   private async handleState(

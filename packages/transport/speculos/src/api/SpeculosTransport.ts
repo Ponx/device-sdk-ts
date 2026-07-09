@@ -29,6 +29,34 @@ import { type SpeculosDatasource } from "@internal/datasource/SpeculosDatasource
 export const speculosIdentifier: TransportIdentifier =
   "SPECULOS_HTTP_TRANSPORT";
 
+// Some Speculinho pods/proxies close the /apdu connection while Speculos is
+// still blocking on a user-driven modal (e.g. Web3 Checks opt-in). The APDU
+// has generally already been processed server-side by the time this happens,
+// so resending the exact same bytes is safe: Speculos treats it as
+// re-querying the current state rather than re-triggering the action, and
+// returns the real (already decided) response near-instantly instead of
+// blocking again. This gives the connection a few chances to recover before
+// we conclude the device is genuinely gone.
+const SEND_APDU_MAX_ATTEMPTS = 3;
+const SEND_APDU_RETRY_DELAY_MS = 250;
+
+// Blocking, stateful APDUs that must NEVER be resent on a connectivity error.
+// The resend logic above is only safe for state-query-style APDUs (e.g. the
+// Web3-Checks opt-in modal), where resending the exact same bytes merely
+// re-reads the already-decided state. These, in contrast, drive a multi-page
+// device flow (the clear-sign review): if the connection drops mid-flow and we
+// resend them, Speculos restarts the flow from page 1, so the review can never
+// advance. Matched on CLA+INS.
+//   e004 = Ethereum sign transaction / start clear-sign review
+const NON_RESENDABLE_APDU_PREFIXES = ["e004"] as const;
+
+const isResendableApdu = (hexApdu: string): boolean => {
+  const normalized = hexApdu.toLowerCase();
+  return !NON_RESENDABLE_APDU_PREFIXES.some((prefix) =>
+    normalized.startsWith(prefix),
+  );
+};
+
 export class SpeculosTransport implements Transport {
   private logger: LoggerPublisherService;
   private readonly identifier: TransportIdentifier = speculosIdentifier;
@@ -153,39 +181,81 @@ export class SpeculosTransport implements Transport {
     onDisconnect: DisconnectHandler,
     apdu: Uint8Array,
   ): Promise<Either<DmkError, ApduResponse>> {
-    try {
-      const hexApdu = bufferToHexaString(apdu).substring(2);
-      const hexResponse: string =
-        await this._speculosDataSource.postApdu(hexApdu);
-      this.logger.debug(formatApduSentLog(apdu));
-      const apduResponse = this.createApduResponse(hexResponse);
-      this.logger.debug(formatApduReceivedLog(apduResponse));
-      return Right(apduResponse);
-    } catch (error) {
-      // Only tear down the session for genuine connectivity failures.
-      // Protocol/parse errors (e.g. Speculos returning {"error":"..."}) should
-      // NOT disconnect the device — the session is still alive and subsequent
-      // APDUs can succeed.
-      const isConnectivityError = error instanceof DmkNetworkClientError;
-      if (isConnectivityError && this.connectedDevice) {
-        this.logger.debug("disconnecting");
-        onDisconnect(deviceId);
-        this.disconnect({
-          connectedDevice: this.connectedDevice,
-        });
+    const hexApdu = bufferToHexaString(apdu).substring(2);
+    const resendable = isResendableApdu(hexApdu);
+    let lastError: unknown;
 
-        if (this.disconnectInterval) {
-          clearInterval(this.disconnectInterval);
+    for (let attempt = 1; attempt <= SEND_APDU_MAX_ATTEMPTS; attempt++) {
+      try {
+        const hexResponse: string =
+          await this._speculosDataSource.postApdu(hexApdu);
+        this.logger.debug(formatApduSentLog(apdu));
+        const apduResponse = this.createApduResponse(hexResponse);
+        this.logger.debug(formatApduReceivedLog(apduResponse));
+        return Right(apduResponse);
+      } catch (error) {
+        lastError = error;
+        const isConnectivityError = error instanceof DmkNetworkClientError;
+
+        if (isConnectivityError && !resendable) {
+          // Blocking review APDU (e.g. e004): resending would rewind the
+          // device flow, so fail fast instead of retrying.
+          this.logger.warn(
+            "APDU connectivity error on a non-resendable (blocking) APDU, not retrying",
+            {
+              data: {
+                error: error instanceof Error ? error.message : String(error),
+              },
+            },
+          );
+          break;
         }
-      } else {
-        this.logger.warn("APDU error (session kept alive)", {
-          data: {
-            error: error instanceof Error ? error.message : String(error),
-          },
-        });
+
+        if (isConnectivityError && attempt < SEND_APDU_MAX_ATTEMPTS) {
+          this.logger.warn(
+            `APDU connectivity error, retrying (attempt ${attempt}/${SEND_APDU_MAX_ATTEMPTS})`,
+            {
+              data: {
+                error: error instanceof Error ? error.message : String(error),
+              },
+            },
+          );
+          await this.delay(SEND_APDU_RETRY_DELAY_MS);
+          continue;
+        }
+
+        break;
       }
-      return Left(new GeneralDmkError(error));
     }
+
+    const error = lastError;
+    // Only tear down the session for genuine connectivity failures that
+    // survive every retry. Protocol/parse errors (e.g. Speculos returning
+    // {"error":"..."}) should NOT disconnect the device — the session is
+    // still alive and subsequent APDUs can succeed.
+    const isConnectivityError = error instanceof DmkNetworkClientError;
+    if (isConnectivityError && this.connectedDevice) {
+      this.logger.debug("disconnecting");
+      onDisconnect(deviceId);
+      void this.disconnect({
+        connectedDevice: this.connectedDevice,
+      });
+
+      if (this.disconnectInterval) {
+        clearInterval(this.disconnectInterval);
+      }
+    } else {
+      this.logger.warn("APDU error (session kept alive)", {
+        data: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+    return Left(new GeneralDmkError(error));
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private createApduResponse(hexApdu: string): ApduResponse {

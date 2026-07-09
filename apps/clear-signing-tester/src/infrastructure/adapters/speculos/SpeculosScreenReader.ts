@@ -7,8 +7,8 @@ import { inject, injectable } from "inversify";
 import { TYPES } from "@root/src/di/types";
 import { type ScreenReader } from "@root/src/domain/adapters/ScreenReader";
 import { type SpeculinhoConfig } from "@root/src/domain/models/config/SpeculinhoConfig";
-import { getEmulatorBaseUrl } from "@root/src/domain/utils/getEmulatorBaseUrl";
 import { type ScreenEvent } from "@root/src/domain/models/ScreenContent";
+import { getEmulatorBaseUrl } from "@root/src/domain/utils/getEmulatorBaseUrl";
 
 /**
  * Speculos implementation of screen reading functionality

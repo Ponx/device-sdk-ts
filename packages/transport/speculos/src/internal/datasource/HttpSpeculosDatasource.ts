@@ -1,4 +1,7 @@
-import { DmkNetworkClient } from "@ledgerhq/device-management-kit";
+import {
+  DmkNetworkClient,
+  DmkNetworkClientError,
+} from "@ledgerhq/device-management-kit";
 
 import PACKAGE from "@root/package.json";
 
@@ -32,7 +35,12 @@ export class HttpSpeculosDatasource implements SpeculosDatasource {
     })) as SpeculosApduDTO & { error?: string };
     if (!data?.data) {
       const detail = data?.error ?? JSON.stringify(data) ?? "empty body";
-      throw new Error(`Speculos /apdu returned no data field: ${detail}`);
+      // Treat Speculos error responses as connectivity failures so the
+      // transport layer can disconnect and trigger a reconnect. A plain Error
+      // would be swallowed as a non-connectivity issue.
+      throw new DmkNetworkClientError({
+        message: `Speculos /apdu returned no data field: ${detail}`,
+      });
     }
     return data.data;
   }

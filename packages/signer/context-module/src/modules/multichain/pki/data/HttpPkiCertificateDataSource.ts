@@ -54,18 +54,38 @@ export class HttpPkiCertificateDataSource implements PkiCertificateDataSource {
         },
       });
 
+      console.log("[PKI] fetchCertificate", {
+        mode: this.config.cal.mode,
+        keyId: pkiCertificateInfo.keyId,
+        keyUsage: pkiCertificateInfo.keyUsage,
+        targetDevice: pkiCertificateInfo.targetDevice,
+        responseCount: Array.isArray(data) ? data.length : "not-array",
+        descriptorData:
+          Array.isArray(data) && data.length > 0
+            ? data[0]?.descriptor?.data
+            : undefined,
+        availableSignatureModes:
+          Array.isArray(data) && data.length > 0
+            ? Object.keys(data[0]?.descriptor?.signatures ?? {})
+            : undefined,
+        selectedSignature:
+          Array.isArray(data) && data.length > 0
+            ? data[0]?.descriptor?.signatures?.[this.config.cal.mode]
+            : undefined,
+      });
+
       if (
         Array.isArray(data) &&
         data.length > 0 &&
         this.isValidPkiCertificateResponse(data[0], this.config.cal.mode)
       ) {
-        const payload = hexaStringToBuffer(
-          HexStringUtils.appendSignatureToPayload(
-            data[0].descriptor.data,
-            data[0].descriptor.signatures[this.config.cal.mode],
-            SIGNATURE_TAG,
-          ),
+        const assembledHex = HexStringUtils.appendSignatureToPayload(
+          data[0].descriptor.data,
+          data[0].descriptor.signatures[this.config.cal.mode],
+          SIGNATURE_TAG,
         );
+        console.log("[PKI] assembled cert payload hex", assembledHex);
+        const payload = hexaStringToBuffer(assembledHex);
         if (!payload) {
           return Left(
             Error(
@@ -79,8 +99,20 @@ export class HttpPkiCertificateDataSource implements PkiCertificateDataSource {
             pkiCertificateInfo.keyUsage,
           ),
         };
+        console.log(
+          "[PKI] certificate keyUsageNumber",
+          pkiCertificate.keyUsageNumber,
+        );
         return Right(pkiCertificate);
       } else {
+        console.log(
+          "[PKI] fetchCertificate FAILED — invalid response or missing mode signature",
+          {
+            mode: this.config.cal.mode,
+            isArray: Array.isArray(data),
+            hasData: Array.isArray(data) && data.length > 0,
+          },
+        );
         return Left(
           Error(
             "[ContextModule] HttpPkiCertificateDataSource: failed to fetch PKI for given descriptor",

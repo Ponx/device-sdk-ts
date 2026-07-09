@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { inject, injectable } from "inversify";
 
 import { TYPES } from "@root/src/di/types";
+import { type CalConfig } from "@root/src/domain/models/config/CalConfig";
 import { type SpeculinhoConfig } from "@root/src/domain/models/config/SpeculinhoConfig";
 import { type ServiceController } from "@root/src/domain/services/ServiceController";
 
@@ -49,6 +50,8 @@ export class SpeculinhoServiceController implements ServiceController {
   constructor(
     @inject(TYPES.SpeculinhoConfig)
     private readonly config: SpeculinhoConfig,
+    @inject(TYPES.CalConfig)
+    private readonly calConfig: CalConfig,
     @inject(TYPES.LoggerPublisherServiceFactory)
     loggerFactory: (tag: string) => LoggerPublisherService,
   ) {
@@ -111,6 +114,15 @@ export class SpeculinhoServiceController implements ServiceController {
       seed,
       run_id: this.runId,
     };
+
+    // Boot the pod's Speculos with "-p" so it trusts the production PKI root
+    // when CAL mode is "prod". Without it Speculos defaults to the test root
+    // and prod-signed CAL certificates (PKI + gated descriptors) fail on-device
+    // with 5720 "failed to verify signature". Mirrors the local Docker path in
+    // SpeculosServiceController; forwarded verbatim via Speculinho `extra_args`.
+    if (this.calConfig.mode === "prod") {
+      body["extra_args"] = ["-p"];
+    }
 
     let res: Response;
     try {

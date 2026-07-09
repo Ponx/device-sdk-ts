@@ -59,7 +59,11 @@ export class DMKServiceController implements ServiceController {
 
   private buildDmk(): DeviceManagementKit {
     const dmkBuilder = new DeviceManagementKitBuilder().addTransport(
-      speculosTransportFactory(getEmulatorBaseUrl(this.speculosConfig)),
+      // isE2E=true disables the background disconnect poller: this automated
+      // runner drives a linear flow where sendApdu already handles genuine
+      // connectivity failures, and the poller otherwise races blocking review
+      // APDUs on remote Speculinho pods and tears down the session mid-review.
+      speculosTransportFactory(getEmulatorBaseUrl(this.speculosConfig), true),
     );
     for (const subscriber of this.loggerSubscribers) {
       dmkBuilder.addLogger(subscriber);
