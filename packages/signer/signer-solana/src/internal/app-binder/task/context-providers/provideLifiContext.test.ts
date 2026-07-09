@@ -393,4 +393,42 @@ describe("provideLifiContext", () => {
       "transfer_data",
     );
   });
+
+  it("reuses a single descriptor for repeated same-type instructions (SPL multi-transfer)", async () => {
+    // A real SPL LiFi swap can contain multiple TokenkegQfeZ:03 instructions
+    // (e.g. routing through several DEXes). The CAL template only has one
+    // descriptor for that key. Each occurrence must get the same descriptor so
+    // the firmware descriptor count matches the instruction count.
+    api.sendCommand.mockResolvedValue(success);
+
+    const TOKENKEG = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+
+    const message = {
+      compiledInstructions: [
+        { programIdIndex: 0, data: new Uint8Array([0x03]) }, // first SPL transfer
+        { programIdIndex: 0, data: new Uint8Array([0x03]) }, // second SPL transfer
+      ],
+      allKeys: [makeKey(TOKENKEG)],
+    };
+
+    const result = {
+      type: ClearSignContextType.SOLANA_LIFI as const,
+      payload: {
+        descriptors: {
+          [`${TOKENKEG}:03`]: [{ data: "spl_transfer_data", signature: "spl_sig" }],
+        },
+        instructions: [
+          { program_id: TOKENKEG, discriminator_hex: "03" },
+        ],
+      },
+      certificate: undefined,
+    };
+
+    await provideLifiContext(result as any, makeDeps(buildNormaliser(message)));
+
+    // Both instructions must get the single descriptor (reused in-place)
+    expect(api.sendCommand).toHaveBeenCalledTimes(2);
+    expect(api.sendCommand.mock.calls[0]![0].args.dataHex).toBe("spl_transfer_data");
+    expect(api.sendCommand.mock.calls[1]![0].args.dataHex).toBe("spl_transfer_data");
+  });
 });

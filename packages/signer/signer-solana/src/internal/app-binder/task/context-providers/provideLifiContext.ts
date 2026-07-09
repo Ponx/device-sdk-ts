@@ -89,9 +89,13 @@ export const provideLifiContext: ProvideContextHandler<
   }
 };
 
-// Pops the next descriptor for the first matching (program_id, discriminator)
-// from the FIFO queues. Callers must pass the same mutable `queues` object
-// across iterations so that each pop advances the queue for that key.
+// Returns the next descriptor for the first matching (program_id, discriminator)
+// from the queues. When a key holds multiple distinct descriptors (e.g. the two
+// System Transfer entries for swap-amount and fee) the queue advances FIFO so
+// each instruction occurrence gets the right descriptor. When only one entry
+// remains it is returned in-place, allowing repeated instructions of the same
+// type (e.g. multiple SPL transfers) to all match. Callers must pass the same
+// mutable `queues` object across iterations.
 function popMatchingDescriptor(
   programIdStr: string | undefined,
   instructionData: Uint8Array,
@@ -121,8 +125,12 @@ function popMatchingDescriptor(
     const queue = queues[key];
     if (!queue?.length) continue;
 
-    const descriptor = queue.shift()!;
-    logger.debug("[popMatchingDescriptor] Popped descriptor from queue", {
+    // Pop only when multiple distinct descriptors remain for the same key
+    // (e.g. the two System Transfer entries: swap-amount then fee). When a
+    // single descriptor remains, return it in-place so repeated instructions
+    // of the same type (e.g. multiple SPL transfers) keep getting a match.
+    const descriptor = queue.length > 1 ? queue.shift()! : queue[0]!;
+    logger.debug("[popMatchingDescriptor] Matched descriptor from queue", {
       data: { programId: programIdStr, key, remaining: queue.length },
     });
     return descriptor;
