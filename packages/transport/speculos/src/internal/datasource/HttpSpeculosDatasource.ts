@@ -1,5 +1,7 @@
-import * as http from "node:http";
-import * as https from "node:https";
+// Type-only imports — completely erased at compile time, never bundled by Webpack.
+// ClientRequest / IncomingMessage live in node:http even for HTTPS connections.
+import type { ClientRequest, IncomingMessage } from "node:http";
+import type { Agent as HttpsAgent } from "node:https";
 
 import {
   DmkNetworkClient,
@@ -14,17 +16,9 @@ const TIMEOUT = 10_000; // 10 second timeout — generous enough for remote Spec
 
 const removeTrailingSlashes = (url: string) => url.replace(/\/+$/, "");
 
-// Dedicated HTTP/1.1 agents for APDU calls. Using Node's native http/https
-// module (not undici / globalThis.fetch) gives the blocking APDU a completely
-// separate TCP connection pool from the one shared by touch (/finger) and
-// screen (/events) requests. Without this isolation all three compete over the
-// same undici HTTP/2 multiplexed connection: Envoy resets the entire connection
-// when the long-lived APDU stream exceeds its route timeout (~15 s), which
-// simultaneously kills the in-flight touch and screen reads, stalls the review,
-// and ultimately triggers a session teardown. With keepAlive:false each APDU
-// call gets its own fresh TCP connection so there is zero sharing.
-const apduHttpAgent = new http.Agent({ keepAlive: false });
-const apduHttpsAgent = new https.Agent({ keepAlive: false });
+/** True only in a real Node.js process — never in a browser bundle. */
+const IS_NODE =
+  typeof process !== "undefined" && typeof process.versions?.node === "string";
 
 export class HttpSpeculosDatasource implements SpeculosDatasource {
   private readonly baseUrl: string;
@@ -45,22 +39,73 @@ export class HttpSpeculosDatasource implements SpeculosDatasource {
   }
 
   /**
-   * Send an APDU to Speculos via Node's native http/https module, bypassing
-   * the globalThis.fetch (undici) connection pool that is shared with touch
-   * and screen requests. See the module-level comment on apduHttpsAgent.
+   * Send an APDU to Speculos.
+   *
+   * For Node.js + HTTPS (i.e. Speculinho), the native `node:https` module is
+   * used so the blocking APDU gets its own TCP connection, completely isolated
+   * from the undici pool shared by touch (/finger) and screen (/events)
+   * requests. Without this isolation Envoy's ~15 s route timeout resets the
+   * shared connection mid-review, killing concurrent requests and stalling the
+   * signing flow.
+   *
+   * For plain HTTP (local Speculos) or browser environments the Envoy problem
+   * does not apply, so DmkNetworkClient (globalThis.fetch) is used instead.
    */
   postApdu(apdu: string): Promise<string> {
+    if (IS_NODE && this.baseUrl.startsWith("https:")) {
+      return this._postApduNodeHttps(apdu);
+    }
+    return this._postApduFetch(apdu);
+  }
+
+  /** HTTP / browser fallback: send via DmkNetworkClient (globalThis.fetch). */
+  private _postApduFetch(apdu: string): Promise<string> {
+    return this.http
+      .post(`${this.baseUrl}/apdu`, { data: apdu })
+      .then((response) => {
+        const data = response as { data?: string; error?: string };
+        if (!data?.data) {
+          throw new DmkNetworkClientError({
+            message: `Speculos /apdu returned no data field: ${
+              data?.error ?? JSON.stringify(response) ?? "empty body"
+            }`,
+          });
+        }
+        return data.data;
+      });
+  }
+
+  /**
+   * Node.js + HTTPS path: dynamically import `node:https` so that Webpack
+   * (used by the sample app's Next.js build) never attempts to bundle it.
+   * The `webpackIgnore: true` hint tells Webpack to skip static analysis of
+   * this import; the IS_NODE + https guard in postApdu() ensures this method
+   * is never called in a browser context or against an HTTP URL.
+   *
+   * The `any` cast on the module is intentional: Webpack skips type resolution
+   * for ignored imports, so no static module type is available. The named types
+   * at the top of the file (HttpsAgent, ClientRequest, IncomingMessage) cover
+   * specific local variables.
+   */
+  private async _postApduNodeHttps(apdu: string): Promise<string> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const httpsMod: any = await import(/* webpackIgnore: true */ "node:https");
+
+    /* eslint-disable
+       @typescript-eslint/no-unsafe-assignment,
+       @typescript-eslint/no-unsafe-call,
+       @typescript-eslint/no-unsafe-member-access
+    */
     return new Promise((resolve, reject) => {
       const parsedUrl = new URL(`${this.baseUrl}/apdu`);
-      const isHttps = parsedUrl.protocol === "https:";
-      const agent = isHttps ? apduHttpsAgent : apduHttpAgent;
-      const lib = isHttps ? https : http;
+      // keepAlive:false → each APDU call gets its own fresh TCP connection.
+      const agent = new httpsMod.Agent({ keepAlive: false }) as HttpsAgent;
       const body = JSON.stringify({ data: apdu });
 
-      const req = lib.request(
+      const req: ClientRequest = httpsMod.request(
         {
           hostname: parsedUrl.hostname,
-          port: parsedUrl.port || (isHttps ? 443 : 80),
+          port: parsedUrl.port || 443,
           path: parsedUrl.pathname,
           method: "POST",
           headers: {
@@ -70,7 +115,7 @@ export class HttpSpeculosDatasource implements SpeculosDatasource {
           },
           agent,
         },
-        (res) => {
+        (res: IncomingMessage) => {
           const chunks: Buffer[] = [];
           res.on("data", (chunk: Buffer) => chunks.push(chunk));
           res.on("end", () => {
@@ -111,6 +156,11 @@ export class HttpSpeculosDatasource implements SpeculosDatasource {
       req.write(body);
       req.end();
     });
+    /* eslint-enable
+       @typescript-eslint/no-unsafe-assignment,
+       @typescript-eslint/no-unsafe-call,
+       @typescript-eslint/no-unsafe-member-access
+    */
   }
 
   async isServerAvailable(): Promise<boolean> {
