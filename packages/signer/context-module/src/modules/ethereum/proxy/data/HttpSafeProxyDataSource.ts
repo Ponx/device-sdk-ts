@@ -5,6 +5,7 @@ import { Either, Left, Right } from "purify-ts";
 import { configTypes } from "@/config/di/configTypes";
 import { type ContextModuleServiceConfig } from "@/config/model/ContextModuleConfig";
 import { networkTypes } from "@/shared/network/di/networkTypes";
+import { withRetry } from "@/shared/utils/withRetry";
 
 import { SafeProxyImplementationAddressDto } from "./dto/SafeProxyImplementationAddressDto";
 import {
@@ -31,19 +32,23 @@ export class HttpSafeProxyDataSource implements ProxyDataSource {
   > {
     let dto: SafeProxyImplementationAddressDto | undefined;
     try {
-      dto = (await this.http.get(
-        `${this.config.metadataServiceDomain.url}/v3/ethereum/${chainId}/contract/proxy/${proxyAddress}`,
-        {
-          params: {
-            challenge,
-            resolver: "SAFE_GATEWAY",
-          },
-        },
+      dto = (await withRetry(
+        () =>
+          this.http.get(
+            `${this.config.metadataServiceDomain.url}/v3/ethereum/${chainId}/contract/proxy/${proxyAddress}`,
+            {
+              params: {
+                challenge,
+                resolver: "SAFE_GATEWAY",
+              },
+            },
+          ),
+        { label: "HttpSafeProxyDataSource" },
       )) as SafeProxyImplementationAddressDto;
-    } catch (_error) {
+    } catch (error) {
       return Left(
         new Error(
-          `[ContextModule] HttpSafeProxyDataSource: Failed to fetch safe proxy implementation`,
+          `[ContextModule] HttpSafeProxyDataSource: Failed to fetch safe proxy implementation: ${error}`,
         ),
       );
     }

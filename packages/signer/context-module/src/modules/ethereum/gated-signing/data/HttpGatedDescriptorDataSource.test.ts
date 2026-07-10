@@ -165,22 +165,54 @@ describe("HttpGatedDescriptorDataSource", () => {
       );
     });
 
-    it("should return Left when http.get request fails", async () => {
-      httpMock.get.mockRejectedValue(new Error("Network error"));
-
-      const result = await dataSource.getGatedDescriptor({
-        contractAddress,
-        selector,
-        chainId,
+    describe("retry behaviour", () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
       });
 
-      expect(result).toEqual(
-        Left(
-          new Error(
-            "[ContextModule] HttpGatedDescriptorDataSource: Failed to fetch gated descriptors: Error: Network error",
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("should retry 3 times and return Left with original error when all attempts fail", async () => {
+        httpMock.get.mockRejectedValue(new Error("Network error"));
+
+        const resultPromise = dataSource.getGatedDescriptor({
+          contractAddress,
+          selector,
+          chainId,
+        });
+        await vi.runAllTimersAsync();
+        const result = await resultPromise;
+
+        expect(httpMock.get).toHaveBeenCalledTimes(3);
+        expect(result).toEqual(
+          Left(
+            new Error(
+              "[ContextModule] HttpGatedDescriptorDataSource: Failed to fetch gated descriptors: Error: Network error",
+            ),
           ),
-        ),
-      );
+        );
+      });
+
+      it("should succeed on the second attempt when the first fails", async () => {
+        httpMock.get
+          .mockRejectedValueOnce(new Error("Transient error"))
+          .mockResolvedValueOnce(validGatedDappsResponse);
+
+        const resultPromise = dataSource.getGatedDescriptor({
+          contractAddress,
+          selector,
+          chainId,
+        });
+        await vi.runAllTimersAsync();
+        const result = await resultPromise;
+
+        expect(httpMock.get).toHaveBeenCalledTimes(2);
+        expect(result).toEqual(
+          Right({ signedDescriptor: expectedSignedDescriptor }),
+        );
+      });
     });
 
     it("should use config.cal.branch in ref param", async () => {
@@ -439,22 +471,52 @@ describe("HttpGatedDescriptorDataSource", () => {
       );
     });
 
-    it("should return Left when http.get request fails", async () => {
-      httpMock.get.mockRejectedValue(new Error("Network error"));
-
-      const result = await dataSource.getGatedDescriptorForTypedData({
-        contractAddress,
-        schemaHash,
-        chainId,
+    describe("retry behaviour", () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
       });
 
-      expect(result).toEqual(
-        Left(
-          new Error(
-            "[ContextModule] HttpGatedDescriptorDataSource: Failed to fetch gated descriptors: Error: Network error",
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("should retry 3 times and return Left with original error when all attempts fail", async () => {
+        httpMock.get.mockRejectedValue(new Error("Network error"));
+
+        const resultPromise = dataSource.getGatedDescriptorForTypedData({
+          contractAddress,
+          schemaHash,
+          chainId,
+        });
+        await vi.runAllTimersAsync();
+        const result = await resultPromise;
+
+        expect(httpMock.get).toHaveBeenCalledTimes(3);
+        expect(result).toEqual(
+          Left(
+            new Error(
+              "[ContextModule] HttpGatedDescriptorDataSource: Failed to fetch gated descriptors: Error: Network error",
+            ),
           ),
-        ),
-      );
+        );
+      });
+
+      it("should succeed on the second attempt when the first fails", async () => {
+        httpMock.get
+          .mockRejectedValueOnce(new Error("Transient error"))
+          .mockResolvedValueOnce(validTypedDataResponse);
+
+        const resultPromise = dataSource.getGatedDescriptorForTypedData({
+          contractAddress,
+          schemaHash,
+          chainId,
+        });
+        await vi.runAllTimersAsync();
+        const result = await resultPromise;
+
+        expect(httpMock.get).toHaveBeenCalledTimes(2);
+        expect(result.isRight()).toBe(true);
+      });
     });
   });
 });

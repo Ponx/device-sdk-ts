@@ -81,21 +81,73 @@ describe("HttpSafeProxyDataSource", () => {
       });
     });
 
-    it("should return Left with error when network client throws", async () => {
-      // GIVEN
-      httpMock.get.mockRejectedValue(new Error("Network error"));
+    describe("retry behaviour", () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
 
-      // WHEN
-      const result =
-        await datasource.getProxyImplementationAddress(validParams);
+      afterEach(() => {
+        vi.useRealTimers();
+      });
 
-      // THEN
-      expect(result.isLeft()).toBe(true);
-      expect(result.extract()).toEqual(
-        new Error(
-          "[ContextModule] HttpSafeProxyDataSource: Failed to fetch safe proxy implementation",
-        ),
-      );
+      it("should retry 3 times and return Left with the original error when all attempts fail", async () => {
+        // GIVEN
+        const networkError = new Error("Network error");
+        httpMock.get.mockRejectedValue(networkError);
+
+        // WHEN
+        const resultPromise =
+          datasource.getProxyImplementationAddress(validParams);
+        await vi.runAllTimersAsync();
+        const result = await resultPromise;
+
+        // THEN
+        expect(httpMock.get).toHaveBeenCalledTimes(3);
+        expect(result.isLeft()).toBe(true);
+        expect(result.extract()).toEqual(
+          new Error(
+            `[ContextModule] HttpSafeProxyDataSource: Failed to fetch safe proxy implementation: ${networkError}`,
+          ),
+        );
+      });
+
+      it("should succeed without retrying when the first attempt succeeds", async () => {
+        // GIVEN
+        httpMock.get.mockResolvedValue(validDto);
+
+        // WHEN
+        const resultPromise =
+          datasource.getProxyImplementationAddress(validParams);
+        await vi.runAllTimersAsync();
+        const result = await resultPromise;
+
+        // THEN
+        expect(httpMock.get).toHaveBeenCalledTimes(1);
+        expect(result.isRight()).toBe(true);
+      });
+
+      it("should succeed on the second attempt when the first fails", async () => {
+        // GIVEN
+        httpMock.get
+          .mockRejectedValueOnce(new Error("Transient error"))
+          .mockResolvedValueOnce(validDto);
+
+        // WHEN
+        const resultPromise =
+          datasource.getProxyImplementationAddress(validParams);
+        await vi.runAllTimersAsync();
+        const result = await resultPromise;
+
+        // THEN
+        expect(httpMock.get).toHaveBeenCalledTimes(2);
+        expect(result.isRight()).toBe(true);
+        expect(result.extract()).toEqual({
+          implementationAddress: validDto.implementationAddress,
+          signedDescriptor: validDto.signedDescriptor,
+          keyId: validDto.keyId,
+          keyUsage: validDto.keyUsage,
+        });
+      });
     });
 
     it("should return Left with error when response data is undefined", async () => {

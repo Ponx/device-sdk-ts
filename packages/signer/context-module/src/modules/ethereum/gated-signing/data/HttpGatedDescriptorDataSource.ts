@@ -7,6 +7,7 @@ import { type ContextModuleServiceConfig } from "@/config/model/ContextModuleCon
 import { SIGNATURE_TAG } from "@/shared/model/SignatureTags";
 import { networkTypes } from "@/shared/network/di/networkTypes";
 import { HexStringUtils } from "@/shared/utils/HexStringUtils";
+import { withRetry } from "@/shared/utils/withRetry";
 
 import {
   type GatedDappsDto,
@@ -40,14 +41,18 @@ export class HttpGatedDescriptorDataSource
   > {
     let dto: GatedDappsDto | undefined;
     try {
-      dto = (await this.http.get(`${this.config.cal.url}/gated_dapps`, {
-        params: {
-          ref: `branch:${this.config.cal.branch}`,
-          output: "gated_descriptors,app,category",
-          contracts: contractAddress,
-          chain_id: chainId,
-        },
-      })) as GatedDappsDto;
+      dto = (await withRetry(
+        () =>
+          this.http.get(`${this.config.cal.url}/gated_dapps`, {
+            params: {
+              ref: `branch:${this.config.cal.branch}`,
+              output: "gated_descriptors,app,category",
+              contracts: contractAddress,
+              chain_id: chainId,
+            },
+          }),
+        { label: "HttpGatedDescriptorDataSource.getGatedDescriptor" },
+      )) as GatedDappsDto;
     } catch (error) {
       return Left(
         new Error(
@@ -116,14 +121,20 @@ export class HttpGatedDescriptorDataSource
   > {
     let dto: GatedDappsDto | undefined;
     try {
-      dto = (await this.http.get(`${this.config.cal.url}/gated_dapps`, {
-        params: {
-          ref: `branch:${this.config.cal.branch}`,
-          output: "gated_descriptors",
-          contracts: contractAddress,
-          chain_id: chainId,
+      dto = (await withRetry(
+        () =>
+          this.http.get(`${this.config.cal.url}/gated_dapps`, {
+            params: {
+              ref: `branch:${this.config.cal.branch}`,
+              output: "gated_descriptors",
+              contracts: contractAddress,
+              chain_id: chainId,
+            },
+          }),
+        {
+          label: "HttpGatedDescriptorDataSource.getGatedDescriptorForTypedData",
         },
-      })) as GatedDappsDto;
+      )) as GatedDappsDto;
     } catch (error) {
       return Left(
         new Error(
