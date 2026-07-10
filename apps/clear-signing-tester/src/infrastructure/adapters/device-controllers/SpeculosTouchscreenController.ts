@@ -10,8 +10,8 @@ import { DeviceController } from "@root/src/domain/adapters/DeviceController";
 import { type SpeculinhoConfig } from "@root/src/domain/models/config/SpeculinhoConfig";
 import { getEmulatorBaseUrl } from "@root/src/domain/utils/getEmulatorBaseUrl";
 
-const DEFAULT_DELAY_MS = 5000;
-const FLEX_DELAY_MS = 15000;
+const DEFAULT_DELAY_MS = 2000;
+const FLEX_DELAY_MS = 5000;
 const SETTINGS_NAV_DELAY_MS = 1000;
 
 /**

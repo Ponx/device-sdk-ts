@@ -1,3 +1,6 @@
+import * as http from "node:http";
+import * as https from "node:https";
+
 import {
   DmkNetworkClient,
   DmkNetworkClientError,
@@ -10,6 +13,18 @@ import { type SpeculosDatasource } from "./SpeculosDatasource";
 const TIMEOUT = 10_000; // 10 second timeout — generous enough for remote Speculinho pods
 
 const removeTrailingSlashes = (url: string) => url.replace(/\/+$/, "");
+
+// Dedicated HTTP/1.1 agents for APDU calls. Using Node's native http/https
+// module (not undici / globalThis.fetch) gives the blocking APDU a completely
+// separate TCP connection pool from the one shared by touch (/finger) and
+// screen (/events) requests. Without this isolation all three compete over the
+// same undici HTTP/2 multiplexed connection: Envoy resets the entire connection
+// when the long-lived APDU stream exceeds its route timeout (~15 s), which
+// simultaneously kills the in-flight touch and screen reads, stalls the review,
+// and ultimately triggers a session teardown. With keepAlive:false each APDU
+// call gets its own fresh TCP connection so there is zero sharing.
+const apduHttpAgent = new http.Agent({ keepAlive: false });
+const apduHttpsAgent = new https.Agent({ keepAlive: false });
 
 export class HttpSpeculosDatasource implements SpeculosDatasource {
   private readonly baseUrl: string;
@@ -29,20 +44,73 @@ export class HttpSpeculosDatasource implements SpeculosDatasource {
     });
   }
 
-  async postApdu(apdu: string): Promise<string> {
-    const data = (await this.http.post(`${this.baseUrl}/apdu`, {
-      data: apdu,
-    })) as SpeculosApduDTO & { error?: string };
-    if (!data?.data) {
-      const detail = data?.error ?? JSON.stringify(data) ?? "empty body";
-      // Treat Speculos error responses as connectivity failures so the
-      // transport layer can disconnect and trigger a reconnect. A plain Error
-      // would be swallowed as a non-connectivity issue.
-      throw new DmkNetworkClientError({
-        message: `Speculos /apdu returned no data field: ${detail}`,
+  /**
+   * Send an APDU to Speculos via Node's native http/https module, bypassing
+   * the globalThis.fetch (undici) connection pool that is shared with touch
+   * and screen requests. See the module-level comment on apduHttpsAgent.
+   */
+  postApdu(apdu: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const parsedUrl = new URL(`${this.baseUrl}/apdu`);
+      const isHttps = parsedUrl.protocol === "https:";
+      const agent = isHttps ? apduHttpsAgent : apduHttpAgent;
+      const lib = isHttps ? https : http;
+      const body = JSON.stringify({ data: apdu });
+
+      const req = lib.request(
+        {
+          hostname: parsedUrl.hostname,
+          port: parsedUrl.port || (isHttps ? 443 : 80),
+          path: parsedUrl.pathname,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+            "X-Ledger-Client-Version": this.clientHeader,
+          },
+          agent,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => {
+            const raw = Buffer.concat(chunks).toString("utf8");
+            let parsed: { data?: string; error?: string };
+            try {
+              parsed = JSON.parse(raw) as { data?: string; error?: string };
+            } catch {
+              reject(
+                new DmkNetworkClientError({
+                  message: `Speculos /apdu: invalid JSON response: ${raw}`,
+                }),
+              );
+              return;
+            }
+            if (!parsed.data) {
+              // Treat Speculos error responses as connectivity failures so the
+              // transport layer can disconnect and trigger a reconnect.
+              reject(
+                new DmkNetworkClientError({
+                  message: `Speculos /apdu returned no data field: ${parsed.error ?? raw}`,
+                }),
+              );
+            } else {
+              resolve(parsed.data);
+            }
+          });
+          res.on("error", (err: Error) => {
+            reject(new DmkNetworkClientError({ message: err.message }));
+          });
+        },
+      );
+
+      req.on("error", (err: Error) => {
+        reject(new DmkNetworkClientError({ message: err.message }));
       });
-    }
-    return data.data;
+
+      req.write(body);
+      req.end();
+    });
   }
 
   async isServerAvailable(): Promise<boolean> {
@@ -125,7 +193,7 @@ export class HttpSpeculosDatasource implements SpeculosDatasource {
       }
     };
 
-    (async () => {
+    void (async () => {
       try {
         while (true) {
           const { value, done } = await reader.read();
@@ -159,7 +227,3 @@ export class HttpSpeculosDatasource implements SpeculosDatasource {
     return stream;
   }
 }
-
-type SpeculosApduDTO = {
-  data: string;
-};

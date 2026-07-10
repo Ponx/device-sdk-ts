@@ -3,7 +3,6 @@ import { inject, injectable } from "inversify";
 
 import { TYPES } from "@root/src/di/types";
 import { type DeviceController } from "@root/src/domain/adapters/DeviceController";
-import { type ScreenshotSaver } from "@root/src/domain/adapters/ScreenshotSaver";
 import { type SignableInput } from "@root/src/domain/models/SignableInput";
 import { type RetryService } from "@root/src/domain/services/RetryService";
 import { type ScreenAnalyzerService } from "@root/src/domain/services/ScreenAnalyzer";
@@ -11,9 +10,14 @@ import { type ScreenAnalyzerService } from "@root/src/domain/services/ScreenAnal
 import { type StateHandler, type StateHandlerResult } from "./StateHandler";
 
 const NAVIGATION_MAX_ATTEMPTS = 20;
-const NAVIGATION_DELAY = 1500;
+// Kept small on purpose: the sign-start APDU (e004000200) blocks the HTTP
+// response for the *entire* review, and remote Speculos ingresses (Envoy) reset
+// idle streams at ~15s. Paging + hold-to-sign must therefore complete well
+// under that budget, so we only leave a brief settle time for the next screen
+// to render between taps.
+const NAVIGATION_DELAY = 250;
 const WAIT_FOR_TX_PAGE_ATTEMPTS = 8;
-const WAIT_FOR_TX_PAGE_DELAY = 1500;
+const WAIT_FOR_TX_PAGE_DELAY = 250;
 
 @injectable()
 export class SignTransactionStateHandler implements StateHandler {
@@ -28,8 +32,6 @@ export class SignTransactionStateHandler implements StateHandler {
     private readonly screenAnalyzer: ScreenAnalyzerService,
     @inject(TYPES.RetryService)
     private readonly retryService: RetryService,
-    @inject(TYPES.ScreenshotSaver)
-    private readonly screenshotSaver: ScreenshotSaver,
   ) {
     this.logger = this.loggerFactory("sign-transaction-state-handler");
   }
@@ -44,8 +46,6 @@ export class SignTransactionStateHandler implements StateHandler {
 
       if (navigated) {
         await this.deviceController.signTransaction();
-
-        await this.screenshotSaver.save();
 
         return {
           status: "ongoing",
@@ -105,8 +105,6 @@ export class SignTransactionStateHandler implements StateHandler {
     try {
       await this.retryService.retryUntil(
         async () => {
-          await this.screenshotSaver.save();
-
           if (await this.screenAnalyzer.isBlindSigningBlocked()) {
             this.logger.error("Blind signing is not enabled -- cannot proceed");
             await this.deviceController.rejectTransaction();
@@ -136,8 +134,6 @@ export class SignTransactionStateHandler implements StateHandler {
         data: { error },
       });
       throw error;
-    } finally {
-      await this.screenshotSaver.save();
     }
 
     return true;
