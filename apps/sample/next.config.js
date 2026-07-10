@@ -10,6 +10,22 @@ const nextConfig = {
   compiler: {
     styledComponents: true,
   },
+  webpack: (config, { isServer, webpack }) => {
+    if (!isServer) {
+      // Stub the Node https modules on browser environment
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+          resource.request = resource.request.replace(/^node:/, "");
+        }),
+      );
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        https: false,
+        http: false,
+      };
+    }
+    return config;
+  },
   env: {
     // Expose the transport selector to the browser bundle. Defaults to the mock
     // server transport when the app is started via `dev:default-mock`.

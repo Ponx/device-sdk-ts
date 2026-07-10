@@ -2357,6 +2357,9 @@ importers:
       '@ledgerhq/vitest-config-dmk':
         specifier: workspace:^
         version: link:../../config/vitest
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.2
       rxjs:
         specifier: 'catalog:'
         version: 7.8.2
