@@ -10,13 +10,27 @@ import { type ScreenAnalyzerService } from "@root/src/domain/services/ScreenAnal
 import { type StateHandler, type StateHandlerResult } from "./StateHandler";
 
 const NAVIGATION_MAX_ATTEMPTS = 20;
-// Kept small on purpose: the sign-start APDU (e004000200) blocks the HTTP
-// response for the *entire* review, and remote Speculos ingresses (Envoy) reset
-// idle streams at ~15s. Paging + hold-to-sign must therefore complete well
-// under that budget, so we only leave a brief settle time for the next screen
-// to render between taps.
+// Timing budget for remote Speculos pods (Speculinho) where Envoy's default
+// HTTP route timeout is ~15 s.  The sign-start APDU (e004000200) holds its
+// own isolated TCP connection (via node:https), so the 15 s clock starts when
+// that APDU is sent and ends when the device returns the signed payload.
+// The total time spent in waitUntilTxPage + navigateToLastScreen + hold-to-sign
+// must stay well below 15 s:
+//
+//   waitUntilTxPage (max):  WAIT_FOR_TX_PAGE_ATTEMPTS × WAIT_FOR_TX_PAGE_DELAY
+//                           = 20 × 250 ms = 5 s
+//   navigateToLastScreen (max): NAVIGATION_MAX_ATTEMPTS × NAVIGATION_DELAY
+//                           = 20 × 250 ms = 5 s
+//   hold-to-sign:           ~2 s (Stax) / ~5 s (Flex)
+//   Total worst-case Stax:  5 + 5 + 2 = 12 s  (< 15 s ✓)
+//   Total worst-case Flex:  5 + 5 + 5 = 15 s  (borderline; Flex reviews are usually short)
+//
+// WAIT_FOR_TX_PAGE_ATTEMPTS intentionally higher than NAVIGATION_MAX_ATTEMPTS:
+// complex raw transactions (e.g. multisig with many ABI fields) can take up to
+// ~4–5 s for the device to finish parsing and show the first review page, while
+// simple typed-data messages transition in < 1 s.
 const NAVIGATION_DELAY = 250;
-const WAIT_FOR_TX_PAGE_ATTEMPTS = 8;
+const WAIT_FOR_TX_PAGE_ATTEMPTS = 20;
 const WAIT_FOR_TX_PAGE_DELAY = 250;
 
 @injectable()
