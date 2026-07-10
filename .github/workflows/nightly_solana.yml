@@ -11,10 +11,6 @@ on:
 
 env:
   FORCE_COLOR: "1"
-  SOL_APP_VERSION: ${{ vars.SOL_APP_VERSION || '1.5.0' }}
-  OS_VERSION_STAX: ${{ vars.OS_VERSION_STAX || '1.4.0' }}
-  OS_VERSION_FLEX: ${{ vars.OS_VERSION_FLEX || '1.1.0' }}
-  OS_VERSION_NANOX: ${{ vars.OS_VERSION_NANOX || '2.4.0' }}
 
 permissions:
   contents: read
@@ -63,8 +59,9 @@ jobs:
           runner: cs-tester:solana
           test: ${{ matrix.test }}
           device: ${{ matrix.device }}
-          app-version: ${{ env.SOL_APP_VERSION }}
-          os-version: ${{ matrix.device == 'stax' && env.OS_VERSION_STAX || matrix.device == 'flex' && env.OS_VERSION_FLEX || env.OS_VERSION_NANOX }}
+          coin-app: Solana
+          gh-bot-app-id: ${{ secrets.GH_BOT_APP_ID }}
+          gh-bot-private-key: ${{ secrets.GH_BOT_PRIVATE_KEY }}
           log-level: error
           enable-file-logging: "true"
           artifact-prefix: solana-cs-tester-logs
@@ -94,8 +91,9 @@ jobs:
           runner: cs-tester:solana
           test: ${{ matrix.test }}
           device: ${{ matrix.device }}
-          app-version: ${{ env.SOL_APP_VERSION }}
-          os-version: ${{ matrix.device == 'stax' && env.OS_VERSION_STAX || matrix.device == 'flex' && env.OS_VERSION_FLEX || env.OS_VERSION_NANOX }}
+          coin-app: Solana
+          gh-bot-app-id: ${{ secrets.GH_BOT_APP_ID }}
+          gh-bot-private-key: ${{ secrets.GH_BOT_PRIVATE_KEY }}
           use-rpc: "true"
           log-level: error
           enable-file-logging: "true"

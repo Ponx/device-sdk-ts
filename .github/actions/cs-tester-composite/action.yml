@@ -15,14 +15,9 @@ inputs:
   device:
     description: "Single device type (stax, nanox, flex)"
     required: true
-  app-version:
-    description: "Coin app version to request from Speculinho (e.g. 1.19.1 for Ethereum, 1.5.0 for Solana)"
-    required: false
-    default: ""
-  os-version:
-    description: "Device OS version to request from Speculinho (e.g. 1.4.0)"
-    required: false
-    default: ""
+  coin-app:
+    description: "Coin app folder name in coin-apps (e.g. Ethereum, Solana)"
+    required: true
   artifact-prefix:
     description: "Prefix for uploaded artifact names"
     required: true
@@ -49,6 +44,12 @@ inputs:
     description: "Enable file logging and screenshots"
     required: false
     default: "false"
+  gh-bot-app-id:
+    description: "GitHub App ID for coin-apps checkout"
+    required: true
+  gh-bot-private-key:
+    description: "GitHub App private key for coin-apps checkout"
+    required: true
   gating-token:
     description: "Clear signing gating token"
     required: true
@@ -62,6 +63,39 @@ runs:
   steps:
     - uses: LedgerHQ/device-sdk-ts/.github/actions/setup-with-build-cache-composite@b83ec5020b992dcc53f683830e0abd2e147791ae
 
+    - name: Generate token
+      id: generate-token
+      uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+      with:
+        app-id: ${{ inputs.gh-bot-app-id }}
+        private-key: ${{ inputs.gh-bot-private-key }}
+        owner: LedgerHQ
+        repositories: coin-apps
+
+    - name: Retrieving coin apps
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      with:
+        ref: master
+        repository: LedgerHQ/coin-apps
+        token: ${{ steps.generate-token.outputs.token }}
+        path: coin-apps
+        sparse-checkout: |
+          ${{ inputs.device }}/*/${{ inputs.coin-app }}/*.elf
+        sparse-checkout-cone-mode: false
+
+    - name: Discover latest OS and app versions
+      id: versions
+      shell: bash
+      env:
+        INPUT_DEVICE: ${{ inputs.device }}
+        INPUT_COIN_APP: ${{ inputs.coin-app }}
+      run: |
+        OS_VERSION=$(ls "coin-apps/$INPUT_DEVICE/" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+        APP_VERSION=$(ls "coin-apps/$INPUT_DEVICE/$OS_VERSION/$INPUT_COIN_APP/" | grep -E '^app_[0-9]+\.[0-9]+\.[0-9]+\.elf$' | sed 's/app_//;s/\.elf//' | sort -V | tail -1)
+        echo "os-version=$OS_VERSION" >> "$GITHUB_OUTPUT"
+        echo "app-version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+        echo "Discovered: device=$INPUT_DEVICE os=$OS_VERSION app=$APP_VERSION"
+
     - name: Run Clear Signing Test
       shell: bash
       env:
@@ -69,8 +103,8 @@ runs:
         GATING_TOKEN: ${{ inputs.gating-token }}
         SOLANA_RPC_URL: ${{ inputs.solana-rpc-url }}
         INPUT_DEVICE: ${{ inputs.device }}
-        INPUT_APP_VERSION: ${{ inputs.app-version }}
-        INPUT_OS_VERSION: ${{ inputs.os-version }}
+        INPUT_APP_VERSION: ${{ steps.versions.outputs.app-version }}
+        INPUT_OS_VERSION: ${{ steps.versions.outputs.os-version }}
         INPUT_LOG_LEVEL: ${{ inputs.log-level }}
         INPUT_USE_RPC: ${{ inputs.use-rpc }}
         INPUT_SCAN_LIMIT: ${{ inputs.scan-limit }}

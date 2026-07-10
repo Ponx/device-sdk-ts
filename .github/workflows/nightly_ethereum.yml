@@ -11,10 +11,6 @@ on:
 
 env:
   FORCE_COLOR: "1"
-  ETH_APP_VERSION: ${{ vars.ETH_APP_VERSION || '1.22.1' }}
-  OS_VERSION_STAX: ${{ vars.OS_VERSION_STAX || '1.10.1' }}
-  OS_VERSION_FLEX: ${{ vars.OS_VERSION_FLEX || '1.6.1' }}
-  OS_VERSION_NANOX: ${{ vars.OS_VERSION_NANOX || '2.7.1' }}
 
 permissions:
   contents: read
@@ -71,8 +67,9 @@ jobs:
           test: test:erc7730
           dapp: ${{ matrix.dapp }}
           device: ${{ matrix.device }}
-          app-version: ${{ env.ETH_APP_VERSION }}
-          os-version: ${{ matrix.device == 'stax' && env.OS_VERSION_STAX || matrix.device == 'flex' && env.OS_VERSION_FLEX || env.OS_VERSION_NANOX }}
+          coin-app: Ethereum
+          gh-bot-app-id: ${{ secrets.GH_BOT_APP_ID }}
+          gh-bot-private-key: ${{ secrets.GH_BOT_PRIVATE_KEY }}
           log-level: error
           enable-file-logging: "true"
           artifact-prefix: erc7730-calldata-logs
@@ -110,8 +107,9 @@ jobs:
           test: test:erc7730:typed-data
           dapp: ${{ matrix.dapp }}
           device: ${{ matrix.device }}
-          app-version: ${{ env.ETH_APP_VERSION }}
-          os-version: ${{ matrix.device == 'stax' && env.OS_VERSION_STAX || matrix.device == 'flex' && env.OS_VERSION_FLEX || env.OS_VERSION_NANOX }}
+          coin-app: Ethereum
+          gh-bot-app-id: ${{ secrets.GH_BOT_APP_ID }}
+          gh-bot-private-key: ${{ secrets.GH_BOT_PRIVATE_KEY }}
           log-level: error
           enable-file-logging: "true"
           artifact-prefix: erc7730-ethereum-logs
@@ -136,8 +134,9 @@ jobs:
           runner: cs-tester
           test: test:gating
           device: ${{ matrix.device }}
-          app-version: ${{ env.ETH_APP_VERSION }}
-          os-version: ${{ matrix.device == 'stax' && env.OS_VERSION_STAX || env.OS_VERSION_FLEX }}
+          coin-app: Ethereum
+          gh-bot-app-id: ${{ secrets.GH_BOT_APP_ID }}
+          gh-bot-private-key: ${{ secrets.GH_BOT_PRIVATE_KEY }}
           log-level: error
           enable-file-logging: "true"
           artifact-prefix: ethereum-gating-logs
